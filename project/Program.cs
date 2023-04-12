@@ -4,14 +4,16 @@ using project.Data;
 
 var builder = WebApplication.CreateBuilder(args);
 
-// Add services to the container.
-
 builder.Services.AddControllers();
+builder.Services.AddAutoMapper(AppDomain.CurrentDomain.GetAssemblies());
 builder.Services.AddScoped<IUserDbRepository, UserDbRepository>();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-builder.Services.AddDbContext<AppDbContext>(options => options
-    .UseInMemoryDatabase("inMemoryDb"));
+
+builder.Services.AddAuthentication();
+
+builder.Services.AddDbContext<AppDbContext>(options => 
+    options.UseSqlite(builder.Configuration.GetConnectionString("Sqlite")));
 
 var app = builder.Build();
 
@@ -22,11 +24,9 @@ if (app.Environment.IsDevelopment())
     app.UseSwaggerUI();
 }
 
-
 Seed.SeedData(app);
 
 app.UseHttpsRedirection();
-
 app.UseAuthorization();
 
 app.MapControllers();

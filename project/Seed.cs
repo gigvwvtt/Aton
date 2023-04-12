@@ -1,3 +1,5 @@
+using Bogus;
+using Bogus.DataSets;
 using project.Data;
 using project.Models;
 
@@ -14,13 +16,12 @@ public static class Seed
 
             if (!context.Users.Any())
             {
-                context.Users.AddRange(new List<User>()
-                {
-                    new User()
+                context.Users.Add(
+                    new User
                     {
                         Guid = Guid.NewGuid(),
                         Login = "admin",
-                        Password = "passwordAdmin",
+                        Password = "admin",
                         Name = "администратор",
                         Gender = 2,
                         Birthday = DateTime.MinValue,
@@ -29,85 +30,43 @@ public static class Seed
                         CreatedBy = "",
                         ModifiedOn = DateTime.Now.AddMonths(-2),
                         ModifiedBy = ""
-                    },
-                    new User()
-                    {
-                        Guid = Guid.NewGuid(),
-                        Login = Guid.NewGuid().ToString().Skip(3).Take(7).ToString(),
-                        Password = Guid.NewGuid().ToString().Skip(2).Take(5).ToString(),
-                        Name = "юзер1",
-                        Gender = Random.Shared.Next(0, 2),
-                        Birthday = DateTime.Now.AddDays(-3555),
-                        Admin = false,
-                        CreatedOn = DateTime.Now.AddMonths(-1).AddDays(-2),
-                        CreatedBy = "admin",
-                        ModifiedOn = DateTime.Now.AddMonths(-2).AddDays(-2),
-                        ModifiedBy = "admin",
-                        RevokedOn = DateTime.Now.AddDays(-2),
-                        RevokedBy = "admin"
-                    },
-                    new User()
-                    {
-                        Guid = Guid.NewGuid(),
-                        Login = Guid.NewGuid().ToString().Skip(3).Take(7).ToString(),
-                        Password = Guid.NewGuid().ToString().Skip(2).Take(5).ToString(),
-                        Name = "юзер1",
-                        Gender = Random.Shared.Next(0, 2),
-                        Birthday = DateTime.Now.AddDays(-3269),
-                        Admin = false,
-                        CreatedOn = DateTime.Now.AddMonths(-1).AddDays(-2),
-                        CreatedBy = "admin",
-                        ModifiedOn = DateTime.Now.AddMonths(-2).AddDays(-2),
-                        ModifiedBy = "admin"
-                    },
-                    new User()
-                    {
-                        Guid = Guid.NewGuid(),
-                        Login = Guid.NewGuid().ToString().Skip(3).Take(7).ToString(),
-                        Password = Guid.NewGuid().ToString().Skip(2).Take(5).ToString(),
-                        Name = "юзер1",
-                        Gender = Random.Shared.Next(0, 2),
-                        Birthday = DateTime.Now.AddDays(-3245),
-                        Admin = false,
-                        CreatedOn = DateTime.Now.AddMonths(-1).AddDays(-2),
-                        CreatedBy = "admin",
-                        ModifiedOn = DateTime.Now.AddMonths(-2).AddDays(-2),
-                        ModifiedBy = "admin"
-                    },
-                    new User()
-                    {
-                        Guid = Guid.NewGuid(),
-                        Login = Guid.NewGuid().ToString().Skip(3).Take(7).ToString(),
-                        Password = Guid.NewGuid().ToString().Skip(2).Take(5).ToString(),
-                        Name = "юзер1",
-                        Gender = Random.Shared.Next(0, 2),
-                        Birthday = DateTime.Now.AddDays(-4165),
-                        Admin = false,
-                        CreatedOn = DateTime.Now.AddMonths(-1).AddDays(-2),
-                        CreatedBy = "admin",
-                        ModifiedOn = DateTime.Now.AddMonths(-2).AddDays(-2),
-                        ModifiedBy = "admin",
-                        RevokedOn = DateTime.Now.AddDays(-5),
-                        RevokedBy = "admin"
-                    },
-                    new User()
-                    {
-                        Guid = Guid.NewGuid(),
-                        Login = Guid.NewGuid().ToString().Skip(3).Take(7).ToString(),
-                        Password = Guid.NewGuid().ToString().Skip(2).Take(5).ToString(),
-                        Name = "юзер1",
-                        Gender = Random.Shared.Next(0, 2),
-                        Birthday = DateTime.Now.AddDays(-2395),
-                        Admin = false,
-                        CreatedOn = DateTime.Now.AddMonths(-1).AddDays(-2),
-                        CreatedBy = "admin",
-                        ModifiedOn = DateTime.Now.AddMonths(-2).AddDays(-2),
-                        ModifiedBy = "admin"
                     }
-                });
-                
+                );
+
+                context.Users.AddRange(GenerateUsers(1000));
                 context.SaveChanges();
             }
         }
+    }
+
+    private static IEnumerable<User> GenerateUsers(int amount)
+    {
+        var users = new UserFaker().Generate(amount);
+        return users;
+    }
+}
+
+public sealed class UserFaker : Faker<User>
+{
+    internal UserFaker()
+    {
+        Date.SystemClock = () => DateTime.Parse("2-2-2023 21:10");
+
+        UseSeed(654191)
+            .RuleFor(u => u.Guid, _ => Guid.NewGuid())
+            .RuleFor(u => u.Gender, f => f.PickRandom(0, 1, 2))
+            .RuleFor(u => u.Name, (f, u) => f.Name.FullName())
+            .RuleFor(u => u.Login, (f, u) => f.Internet.UserName(u.Name))
+            .RuleFor(u => u.Password, (f, u) => f.Internet.Password())
+            .RuleFor(u => u.Birthday, (f, u) => f.Person.DateOfBirth)
+            .RuleFor(u => u.Admin, (f, u) => false)
+            .RuleFor(u => u.CreatedOn, (f, u) => f.Date.Past())
+            .RuleFor(u => u.CreatedBy, (f, u) => f.PickRandom(u.Login, "admin"))
+            .RuleFor(u => u.ModifiedOn, (f, u) => f.Date.Between(u.CreatedOn, DateTime.Now))
+            .RuleFor(u => u.ModifiedBy, (f, u) => f.PickRandom(u.Login, "admin"))
+            .RuleFor(u => u.RevokedOn,
+                (f, u) => f.PickRandom(f.Date.Between(u.CreatedOn, DateTime.Now)).OrNull(f, 0.7f))
+            .RuleFor(u => u.RevokedBy,
+                (f, u) => u.RevokedOn == null ? default : f.PickRandom(u.Login, "admin"));
     }
 }
