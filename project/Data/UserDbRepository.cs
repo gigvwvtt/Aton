@@ -12,9 +12,21 @@ public class UserDbRepository : IUserDbRepository
         _context = context;
     }
 
-    public async Task<IEnumerable<User>> GetAll()
+    public async Task<IEnumerable<User>?> GetAll()
     {
         return await _context.Users.ToListAsync();
+    }
+
+    public async Task<IEnumerable<User>?> GetAllActive()
+    {
+        return await _context.Users.Where(u => u.RevokedOn == null).ToListAsync();
+    }
+
+    public async Task<IEnumerable<User>?> GetAllOlderThan(int age)
+    {
+        return await _context.Users.Where(u =>
+                u.Birthday != null && (DateTime.Today.Year - u.Birthday.Value.Year) >= age)
+            .ToListAsync();
     }
 
     public async Task<User?> GetByLogin(string login)
@@ -34,6 +46,16 @@ public class UserDbRepository : IUserDbRepository
     public bool IsUserExist(Guid guid)
     {
         return _context.Users.Any(u => u.Guid == guid);
+    }
+
+    public bool IsUserDeleted(string login)
+    {
+        return _context.Users.Any(u => u.Login == login && u.RevokedOn != null);
+    }
+
+    public bool IsUserAdmin(string login)
+    {
+        return _context.Users.Any(u => u.Login == login && u.Admin);
     }
 
     public bool Add(User user)

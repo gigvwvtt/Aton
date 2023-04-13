@@ -1,5 +1,7 @@
 using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.Mvc.Abstractions;
+using Microsoft.Extensions.Logging.Abstractions;
 using project.Data;
 using project.Dto;
 using project.Models;
@@ -22,28 +24,15 @@ public class UserController : Controller
         _configuration = configuration;
     }
 
-    [HttpGet("GetAllUsers")]
+    [HttpGet("GetAll")]
     public async Task<IActionResult> GetAll()
     {
         var users = await _userDbRepository.GetAll();
         return Ok(users);
     }
     
-    [HttpGet("{login}")]
-    public async Task<IActionResult> GetUser(string login)
-    {
-        if (!_userDbRepository.IsUserExist(login)) 
-            return NotFound("Пользователь не найден");
-        
-        var user = _mapper.Map<UserDto>(await _userDbRepository.GetByLogin(login));
 
-        if (!ModelState.IsValid)
-            return BadRequest(ModelState);
-        
-        return Ok(user);
-    }
-
-    [HttpPost("createUser")]
+    [HttpPost("create")]
     public IActionResult Create(CreateUserDto userDto)
     {
         if (!ModelState.IsValid)
@@ -66,11 +55,17 @@ public class UserController : Controller
         return Ok("Пользователь успешно создан!");
     }
 
-    [HttpPost("createUserByAdmin")]
-    public IActionResult CreateByAdmin(User user)
+    [HttpPost("createByAdmin")]
+    public async Task<IActionResult> CreateByAdmin(string login, string password, User user)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
+        
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
 
         if (_userDbRepository.IsUserExist(user.Login))
         {
@@ -86,40 +81,20 @@ public class UserController : Controller
         return Ok("Пользователь успешно создан!");
     }
     
-    [HttpPost("login")]
-    public async Task<IActionResult> Login(string login, string password, UserCredentialsDto userCredentials)
-    {
-        if (!_userDbRepository.IsUserExist(login))
-            return BadRequest("Пользователь не найден");
-
-        var user = await _userDbRepository.GetByLogin(login);
-        if (user.Password != password)
-        {
-            return BadRequest("Неверный пароль");
-        }
-
-        return Ok();
-    }
-    
-    [HttpPost("edit")]
+    [HttpPost("editMainInfo")]
     public async Task<IActionResult> EditMainInfo(string login, string password, EditUserInfoDto editUserInfoDto)
     {
-        if (!_userDbRepository.IsUserExist(login))
-        {
-            return BadRequest($"Пользователь с логином {login} не существует");
-        }
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+        
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (_userDbRepository.IsUserDeleted(login))
+            return BadRequest($"Пользователь с логином {login} удалён");
+        
+        var user = loginResult.Value;
 
-        var user = await _userDbRepository.GetByLogin(login);
-        if (password != user.Password)
-        {
-            return BadRequest("Неверный пароль!");
-        }
-        
-        if (user.RevokedOn != null)
-        {
-            return BadRequest($"Пользователь с логином {user.Login} удалён");
-        }
-        
         user.Name = editUserInfoDto.Name;
         user.Gender = editUserInfoDto.Gender;
         user.Birthday = editUserInfoDto.Birthday;
@@ -131,24 +106,255 @@ public class UserController : Controller
         return Ok(user);
     }
     
-    // [HttpPost("editByAdmin")]
-    // public async Task<IActionResult> EditByAdmin(string name, int gender, DateTime? birthday, string userToModify)
-    // {
-    //     if (!_userDbRepository.IsUserExist(userToModify))
-    //     {
-    //         return BadRequest($"Пользователь с логином {userToModify} не существует");
-    //     }
-    //     
-    //     var user = await _userDbRepository.GetByLogin(userToModify);
-    //     
-    //     user.Name = name;
-    //     user.Gender = gender;
-    //     user.Birthday = birthday;
-    //
-    //     user.ModifiedOn = DateTime.Now;
-    //     user.ModifiedBy = (await _userDbRepository.GetByGuid(authorizedUserGuid))?.Login;
-    //
-    //     _userDbRepository.Update(user);
-    //     return Ok(user);
-    // }
+    [HttpPost("editMainInfoByAdmin")]
+    public async Task<IActionResult> EditMainInfoByAdmin(string login, string password, 
+        EditUserInfoDto editUserInfoDto, string userToModify)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+        
+        if (!_userDbRepository.IsUserExist(userToModify))
+        {
+            return BadRequest($"Пользователь с логином {userToModify} не существует");
+        }
+        
+        var user = await _userDbRepository.GetByLogin(userToModify);
+        
+        user.Name = editUserInfoDto.Name;
+        user.Gender = editUserInfoDto.Gender;
+        user.Birthday = editUserInfoDto.Birthday;
+        
+        user.ModifiedOn = DateTime.Now;
+        user.ModifiedBy = login;
+    
+        _userDbRepository.Update(user);
+        return Ok(user);
+    }
+
+    [HttpPost("changePassword")]
+    public async Task<IActionResult> ChangePassword(string login, string password, string newPassword)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+
+        if (_userDbRepository.IsUserDeleted(login))
+            return BadRequest($"Пользователь с логином {login} удалён");
+
+        var user = loginResult.Value;
+
+        user.Password = newPassword;
+        user.ModifiedOn = DateTime.Now;
+        user.ModifiedBy = login;
+        _userDbRepository.Update(user);
+        return Ok(user);
+    }
+    
+    [HttpPost("changePasswordByAdmin")]
+    public async Task<IActionResult> ChangePasswordByAdmin(string login, string password, 
+        string userToModify, string newPassword)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+        
+        if (!_userDbRepository.IsUserExist(userToModify))
+        {
+            return BadRequest($"Пользователь с логином {userToModify} не существует");
+        }
+        
+        var user = await _userDbRepository.GetByLogin(userToModify);
+
+        user.Password = newPassword;
+        user.ModifiedOn = DateTime.Now;
+        user.ModifiedBy = login;
+        _userDbRepository.Update(user);
+        return Ok(user);
+    }
+    
+    [HttpPost("changeLogin")]
+    public async Task<IActionResult> ChangeLogin(string login, string password, string newLogin)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+
+        if (_userDbRepository.IsUserDeleted(login))
+            return BadRequest($"Пользователь с логином {login} удалён");
+
+        var user = loginResult.Value;
+
+        user.Login = newLogin;
+        user.ModifiedOn = DateTime.Now;
+        user.ModifiedBy = login;
+        _userDbRepository.Update(user);
+        return Ok(user);
+    }
+    
+    [HttpPost("changeLoginByAdmin")]
+    public async Task<IActionResult> ChangeLoginByAdmin(string login, string password, 
+        string userToModify, string newLogin)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+        
+        if (!_userDbRepository.IsUserExist(userToModify))
+        {
+            return BadRequest($"Пользователь с логином {userToModify} не существует");
+        }
+        
+        var user = await _userDbRepository.GetByLogin(userToModify);
+
+        user.Login = newLogin;
+        user.ModifiedOn = DateTime.Now;
+        user.ModifiedBy = login;
+        _userDbRepository.Update(user);
+        return Ok(user);
+    }
+
+    [HttpGet("getAllActiveByAdmin")]
+    public async Task<IActionResult> GetAllActiveUsersByAdmin(string login, string password)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+                
+        var activeUsers = (await _userDbRepository.GetAllActive())?.OrderBy(u=>u.CreatedOn).ToList(); 
+        return Ok(activeUsers);
+    }
+    
+    
+    [HttpGet("{userLoginToGet}")]
+    public async Task<IActionResult> GetUser(string login, string password, string userLoginToGet)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+        
+        if (!_userDbRepository.IsUserExist(userLoginToGet)) 
+            return NotFound($"Пользователь {userLoginToGet} не существует");
+        
+        var user = _mapper.Map<UserForAdminDto>(await _userDbRepository.GetByLogin(userLoginToGet));
+        
+        return Ok(user);
+    }
+
+    [HttpGet("{login}")]
+    public async Task<IActionResult> GetUser(string login, string password)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserExist(login)) 
+            return NotFound($"Пользователь {login} не существует");
+        
+        if (_userDbRepository.IsUserDeleted(login))
+            return BadRequest($"Пользователь с логином {login} удалён");
+        
+        var user = _mapper.Map<UserForAdminDto>(await _userDbRepository.GetByLogin(login));
+        
+        return Ok(user);
+    }
+
+    [HttpGet("olderThan-{age}")]
+    public async Task<IActionResult> GetOlderThan(string login, string password, int age)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+        
+        var users = _mapper.Map<IEnumerable<UserForAdminDto>>(await _userDbRepository.GetAllOlderThan(age));
+        return Ok(users);
+    }
+
+    [HttpPost("{userLoginToDelete}/softDelete")]
+    public async Task<IActionResult> SoftDeleteByAdmin(string login, string password, 
+        string userLoginToDelete)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+        
+        if (!_userDbRepository.IsUserExist(userLoginToDelete)) 
+            return NotFound($"Пользователь {userLoginToDelete} не существует");
+
+        var user = await _userDbRepository.GetByLogin(userLoginToDelete);
+
+        user.RevokedOn = DateTime.Now;
+        user.RevokedBy = login;
+        
+        _userDbRepository.Update(user);
+        return Ok();
+    }
+    
+    [HttpPost("{userLoginToDelete}/hardDelete")]
+    public async Task<IActionResult> HardDeleteByAdmin(string login, string password, 
+        string userLoginToDelete)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+        
+        if (!_userDbRepository.IsUserExist(userLoginToDelete)) 
+            return NotFound($"Пользователь {userLoginToDelete} не существует");
+
+        var user = await _userDbRepository.GetByLogin(userLoginToDelete);
+
+        _userDbRepository.Remove(user);
+        return Ok();
+    }
+
+    [HttpPost("{userLoginToRestore}/restore")]
+    public async Task<IActionResult> RestoreByAdmin(string login, string password,
+        string userLoginToRestore)
+    {
+        var loginResult = await Login(login, password);
+        if (loginResult.Value == null) return loginResult.Result;
+        
+        if (!_userDbRepository.IsUserAdmin(login))
+            return BadRequest($"Пользователь {login} не является администратором");
+        
+        if (!_userDbRepository.IsUserExist(userLoginToRestore)) 
+            return NotFound($"Пользователь {userLoginToRestore} не существует");
+        
+        var user = await _userDbRepository.GetByLogin(userLoginToRestore);
+
+        user.RevokedOn = null;
+        user.RevokedBy = null;
+        
+        _userDbRepository.Update(user);
+        return Ok();
+    }
+
+    private async Task<ActionResult<User>> Login(string login, string password)
+    {
+        if (!_userDbRepository.IsUserExist(login))
+        {
+            return BadRequest($"Пользователь с логином {login} не существует");
+        }
+
+        var user = await _userDbRepository.GetByLogin(login);
+        if (password != user.Password)
+        {
+            return BadRequest("Неверный пароль!");
+        }
+
+        return user;
+    }
 }

@@ -1,11 +1,10 @@
-namespace project.Dto;
+﻿namespace project.Dto;
 
-public class UserDto
+public class UserForAdminDto
 {
-    public Guid Guid { get; set; }
     public string Login { get; set; }
-    public string Password { get; set; }
     public string Name { get; set; }
     public int Gender { get; set; }
     public DateTime? Birthday { get; set; }
+    public DateTime? RevokedOn { get; set; }
 }
