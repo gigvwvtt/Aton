@@ -1,7 +1,5 @@
 using AutoMapper;
 using Microsoft.AspNetCore.Mvc;
-using Microsoft.AspNetCore.Mvc.Abstractions;
-using Microsoft.Extensions.Logging.Abstractions;
 using project.Data;
 using project.Dto;
 using project.Models;
@@ -13,15 +11,12 @@ namespace project.Controllers;
 public class UserController : Controller
 {
     private readonly IUserDbRepository _userDbRepository;
-    private readonly IConfiguration _configuration;
     private readonly IMapper _mapper;
 
-    public UserController(IUserDbRepository userDbRepository, IMapper mapper, 
-        IConfiguration configuration)
+    public UserController(IUserDbRepository userDbRepository, IMapper mapper)
     {
         _userDbRepository = userDbRepository;
         _mapper = mapper;
-        _configuration = configuration;
     }
 
     [HttpGet("GetAll")]
@@ -30,7 +25,6 @@ public class UserController : Controller
         var users = await _userDbRepository.GetAll();
         return Ok(users);
     }
-    
 
     [HttpPost("create")]
     public IActionResult Create(CreateUserDto userDto)
@@ -44,7 +38,12 @@ public class UserController : Controller
         }
 
         var user = _mapper.Map<User>(userDto);
+        user.Guid = Guid.NewGuid();
         user.CreatedOn = DateTime.Now;
+        user.CreatedBy = user.Login;
+        user.Admin = false;
+        user.ModifiedOn = DateTime.Now;
+        user.ModifiedBy = user.Login;
 
         if (!_userDbRepository.Add(user))
         {

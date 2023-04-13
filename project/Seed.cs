@@ -1,3 +1,4 @@
+using System.Text.RegularExpressions;
 using Bogus;
 using Bogus.DataSets;
 using project.Data;
@@ -55,9 +56,11 @@ public sealed class UserFaker : Faker<User>
         UseSeed(654191)
             .RuleFor(u => u.Guid, _ => Guid.NewGuid())
             .RuleFor(u => u.Gender, f => f.PickRandom(0, 1, 2))
-            .RuleFor(u => u.Name, (f, u) => f.Name.FullName())
-            .RuleFor(u => u.Login, (f, u) => f.Internet.UserName(u.Name))
-            .RuleFor(u => u.Password, (f, u) => f.Internet.Password())
+            .RuleFor(u => u.Name, (f, u) => 
+                new Regex("[^a-zA-Zа-яА-ЯёЁ]").Replace(f.Name.FirstName(), ""))
+            .RuleFor(u => u.Login, (f, u) => 
+                new Regex("[^a-zA-Z\\d]").Replace(f.Internet.UserName(u.Name), ""))
+            .RuleFor(u => u.Password, (f, u) => f.Internet.Password(regexPattern: "[a-zA-Z\\d]"))
             .RuleFor(u => u.Birthday, (f, u) => f.Person.DateOfBirth)
             .RuleFor(u => u.Admin, (f, u) => false)
             .RuleFor(u => u.CreatedOn, (f, u) => f.Date.Past())
