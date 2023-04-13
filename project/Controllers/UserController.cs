@@ -19,13 +19,6 @@ public class UserController : Controller
         _mapper = mapper;
     }
 
-    [HttpGet("GetAll")]
-    public async Task<IActionResult> GetAll()
-    {
-        var users = await _userDbRepository.GetAll();
-        return Ok(users);
-    }
-
     [HttpPost("create")]
     public IActionResult Create(CreateUserDto userDto)
     {
@@ -54,8 +47,8 @@ public class UserController : Controller
         return Ok("Пользователь успешно создан!");
     }
 
-    [HttpPost("createByAdmin")]
-    public async Task<IActionResult> CreateByAdmin(string login, string password, User user)
+    [HttpPost("admin/create")]
+    public async Task<IActionResult> CreateByAdmin(string login, string password, CreateUserDto userDto, bool admin)
     {
         if (!ModelState.IsValid)
             return BadRequest(ModelState);
@@ -66,10 +59,18 @@ public class UserController : Controller
         if (!_userDbRepository.IsUserAdmin(login))
             return BadRequest($"Пользователь {login} не является администратором");
 
-        if (_userDbRepository.IsUserExist(user.Login))
+        if (_userDbRepository.IsUserExist(userDto.Login))
         {
-            return BadRequest($"Пользователь с логином {user.Login} уже существует");
+            return BadRequest($"Пользователь с логином {userDto.Login} уже существует");
         }
+
+        var user = _mapper.Map<User>(userDto);
+        user.Guid = Guid.NewGuid();
+        user.CreatedOn = DateTime.Now;
+        user.CreatedBy = login;
+        user.Admin = admin;
+        user.ModifiedOn = DateTime.Now;
+        user.ModifiedBy = login;
 
         if (!_userDbRepository.Add(user))
         {
@@ -101,26 +102,33 @@ public class UserController : Controller
         user.ModifiedOn = DateTime.Now;
         user.ModifiedBy = user.Login;
     
-        _userDbRepository.Update(user);
-        return Ok(user);
+        if (!_userDbRepository.Update(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok("Данные успешно обновлены!");
     }
     
-    [HttpPost("editMainInfoByAdmin")]
+    [HttpPost("admin/{userLogin}/editMainInfo")]
     public async Task<IActionResult> EditMainInfoByAdmin(string login, string password, 
-        EditUserInfoDto editUserInfoDto, string userToModify)
+        EditUserInfoDto editUserInfoDto, string userLogin)
     {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+        
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
         
         if (!_userDbRepository.IsUserAdmin(login))
             return BadRequest($"Пользователь {login} не является администратором");
         
-        if (!_userDbRepository.IsUserExist(userToModify))
+        if (!_userDbRepository.IsUserExist(userLogin))
         {
-            return BadRequest($"Пользователь с логином {userToModify} не существует");
+            return BadRequest($"Пользователь с логином {userLogin} не существует");
         }
         
-        var user = await _userDbRepository.GetByLogin(userToModify);
+        var user = await _userDbRepository.GetByLogin(userLogin);
         
         user.Name = editUserInfoDto.Name;
         user.Gender = editUserInfoDto.Gender;
@@ -129,13 +137,20 @@ public class UserController : Controller
         user.ModifiedOn = DateTime.Now;
         user.ModifiedBy = login;
     
-        _userDbRepository.Update(user);
-        return Ok(user);
+        if (!_userDbRepository.Update(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok("Данные успешно обновлены!");
     }
 
     [HttpPost("changePassword")]
-    public async Task<IActionResult> ChangePassword(string login, string password, string newPassword)
+    public async Task<IActionResult> ChangePassword(string login, string password, UserChangePassword newPassword)
     {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+        
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
 
@@ -144,40 +159,56 @@ public class UserController : Controller
 
         var user = loginResult.Value;
 
-        user.Password = newPassword;
+        user.Password = newPassword.Value;
         user.ModifiedOn = DateTime.Now;
         user.ModifiedBy = login;
-        _userDbRepository.Update(user);
-        return Ok(user);
+        
+        if (!_userDbRepository.Update(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok("Пароль успешно обновлён!");
     }
     
-    [HttpPost("changePasswordByAdmin")]
+    [HttpPost("admin/{userLogin}/changePassword")]
     public async Task<IActionResult> ChangePasswordByAdmin(string login, string password, 
-        string userToModify, string newPassword)
+        string userLogin, UserChangePassword newPassword)
     {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+        
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
         
         if (!_userDbRepository.IsUserAdmin(login))
             return BadRequest($"Пользователь {login} не является администратором");
         
-        if (!_userDbRepository.IsUserExist(userToModify))
+        if (!_userDbRepository.IsUserExist(userLogin))
         {
-            return BadRequest($"Пользователь с логином {userToModify} не существует");
+            return BadRequest($"Пользователь с логином {userLogin} не существует");
         }
         
-        var user = await _userDbRepository.GetByLogin(userToModify);
+        var user = await _userDbRepository.GetByLogin(userLogin);
 
-        user.Password = newPassword;
+        user.Password = newPassword.Value;
         user.ModifiedOn = DateTime.Now;
         user.ModifiedBy = login;
-        _userDbRepository.Update(user);
-        return Ok(user);
+        
+        if (!_userDbRepository.Update(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok($"Пароль пользователя {userLogin} успешно обновлён!");
     }
     
     [HttpPost("changeLogin")]
-    public async Task<IActionResult> ChangeLogin(string login, string password, string newLogin)
+    public async Task<IActionResult> ChangeLogin(string login, string password, UserChangeLogin newLogin)
     {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+        
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
 
@@ -186,38 +217,51 @@ public class UserController : Controller
 
         var user = loginResult.Value;
 
-        user.Login = newLogin;
+        user.Login = newLogin.Value;
         user.ModifiedOn = DateTime.Now;
         user.ModifiedBy = login;
-        _userDbRepository.Update(user);
-        return Ok(user);
+        
+        if (!_userDbRepository.Update(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok("Логин успешно изменён!");
     }
     
-    [HttpPost("changeLoginByAdmin")]
+    [HttpPost("admin/{userLogin}/changeLogin")]
     public async Task<IActionResult> ChangeLoginByAdmin(string login, string password, 
-        string userToModify, string newLogin)
+        string userLogin, UserChangeLogin newLogin)
     {
+        if (!ModelState.IsValid)
+            return BadRequest(ModelState);
+        
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
         
         if (!_userDbRepository.IsUserAdmin(login))
             return BadRequest($"Пользователь {login} не является администратором");
         
-        if (!_userDbRepository.IsUserExist(userToModify))
+        if (!_userDbRepository.IsUserExist(userLogin))
         {
-            return BadRequest($"Пользователь с логином {userToModify} не существует");
+            return BadRequest($"Пользователь с логином {userLogin} не существует");
         }
         
-        var user = await _userDbRepository.GetByLogin(userToModify);
+        var user = await _userDbRepository.GetByLogin(userLogin);
 
-        user.Login = newLogin;
+        user.Login = newLogin.Value;
         user.ModifiedOn = DateTime.Now;
         user.ModifiedBy = login;
-        _userDbRepository.Update(user);
-        return Ok(user);
+        
+        if (!_userDbRepository.Update(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok($"Логин пользователя {userLogin} успешно изменён!");
     }
 
-    [HttpGet("getAllActiveByAdmin")]
+    [HttpGet("admin/getAllActiveUsers")]
     public async Task<IActionResult> GetAllActiveUsersByAdmin(string login, string password)
     {
         var loginResult = await Login(login, password);
@@ -230,9 +274,8 @@ public class UserController : Controller
         return Ok(activeUsers);
     }
     
-    
-    [HttpGet("{userLoginToGet}")]
-    public async Task<IActionResult> GetUser(string login, string password, string userLoginToGet)
+    [HttpGet("admin/{userLogin}/info")]
+    public async Task<IActionResult> GetUserByAdmin(string login, string password, string userLogin)
     {
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
@@ -240,15 +283,15 @@ public class UserController : Controller
         if (!_userDbRepository.IsUserAdmin(login))
             return BadRequest($"Пользователь {login} не является администратором");
         
-        if (!_userDbRepository.IsUserExist(userLoginToGet)) 
-            return NotFound($"Пользователь {userLoginToGet} не существует");
+        if (!_userDbRepository.IsUserExist(userLogin)) 
+            return NotFound($"Пользователь {userLogin} не существует");
         
-        var user = _mapper.Map<UserForAdminDto>(await _userDbRepository.GetByLogin(userLoginToGet));
+        var user = _mapper.Map<UserForAdminDto>(await _userDbRepository.GetByLogin(userLogin));
         
         return Ok(user);
     }
 
-    [HttpGet("{login}")]
+    [HttpGet("info")]
     public async Task<IActionResult> GetUser(string login, string password)
     {
         var loginResult = await Login(login, password);
@@ -260,12 +303,12 @@ public class UserController : Controller
         if (_userDbRepository.IsUserDeleted(login))
             return BadRequest($"Пользователь с логином {login} удалён");
         
-        var user = _mapper.Map<UserForAdminDto>(await _userDbRepository.GetByLogin(login));
+        var user = _mapper.Map<UserDto>(await _userDbRepository.GetByLogin(login));
         
         return Ok(user);
     }
 
-    [HttpGet("olderThan-{age}")]
+    [HttpGet("admin/olderThan-{age}")]
     public async Task<IActionResult> GetOlderThan(string login, string password, int age)
     {
         var loginResult = await Login(login, password);
@@ -278,9 +321,9 @@ public class UserController : Controller
         return Ok(users);
     }
 
-    [HttpPost("{userLoginToDelete}/softDelete")]
+    [HttpPost("admin/{userLogin}/softDelete")]
     public async Task<IActionResult> SoftDeleteByAdmin(string login, string password, 
-        string userLoginToDelete)
+        string userLogin)
     {
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
@@ -288,21 +331,25 @@ public class UserController : Controller
         if (!_userDbRepository.IsUserAdmin(login))
             return BadRequest($"Пользователь {login} не является администратором");
         
-        if (!_userDbRepository.IsUserExist(userLoginToDelete)) 
-            return NotFound($"Пользователь {userLoginToDelete} не существует");
+        if (!_userDbRepository.IsUserExist(userLogin)) 
+            return NotFound($"Пользователь {userLogin} не существует");
 
-        var user = await _userDbRepository.GetByLogin(userLoginToDelete);
+        var user = await _userDbRepository.GetByLogin(userLogin);
 
         user.RevokedOn = DateTime.Now;
         user.RevokedBy = login;
         
-        _userDbRepository.Update(user);
-        return Ok();
+        if (!_userDbRepository.Update(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok($"Пользователь {userLogin} успешно \"мягко\" удалён!");
     }
     
-    [HttpPost("{userLoginToDelete}/hardDelete")]
+    [HttpPost("admin/{userLogin}/hardDelete")]
     public async Task<IActionResult> HardDeleteByAdmin(string login, string password, 
-        string userLoginToDelete)
+        string userLogin)
     {
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
@@ -310,18 +357,22 @@ public class UserController : Controller
         if (!_userDbRepository.IsUserAdmin(login))
             return BadRequest($"Пользователь {login} не является администратором");
         
-        if (!_userDbRepository.IsUserExist(userLoginToDelete)) 
-            return NotFound($"Пользователь {userLoginToDelete} не существует");
+        if (!_userDbRepository.IsUserExist(userLogin)) 
+            return NotFound($"Пользователь {userLogin} не существует");
 
-        var user = await _userDbRepository.GetByLogin(userLoginToDelete);
+        var user = await _userDbRepository.GetByLogin(userLogin);
 
-        _userDbRepository.Remove(user);
-        return Ok();
+        if (!_userDbRepository.Remove(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok($"Пользователь {userLogin} успешно \"жёстко\" удалён!");
     }
 
-    [HttpPost("{userLoginToRestore}/restore")]
+    [HttpPost("admin/{userLogin}/restore")]
     public async Task<IActionResult> RestoreByAdmin(string login, string password,
-        string userLoginToRestore)
+        string userLogin)
     {
         var loginResult = await Login(login, password);
         if (loginResult.Value == null) return loginResult.Result;
@@ -329,16 +380,20 @@ public class UserController : Controller
         if (!_userDbRepository.IsUserAdmin(login))
             return BadRequest($"Пользователь {login} не является администратором");
         
-        if (!_userDbRepository.IsUserExist(userLoginToRestore)) 
-            return NotFound($"Пользователь {userLoginToRestore} не существует");
+        if (!_userDbRepository.IsUserExist(userLogin)) 
+            return NotFound($"Пользователь {userLogin} не существует");
         
-        var user = await _userDbRepository.GetByLogin(userLoginToRestore);
+        var user = await _userDbRepository.GetByLogin(userLogin);
 
         user.RevokedOn = null;
         user.RevokedBy = null;
         
-        _userDbRepository.Update(user);
-        return Ok();
+        if (!_userDbRepository.Update(user))
+        {
+            ModelState.AddModelError("", "Ошибка при сохранении в БД");
+            return StatusCode(500, ModelState);
+        }
+        return Ok($"Пользователь {userLogin} успешно восстановлен!");
     }
 
     private async Task<ActionResult<User>> Login(string login, string password)

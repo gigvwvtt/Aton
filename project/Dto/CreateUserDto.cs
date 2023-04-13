@@ -4,7 +4,7 @@ namespace project.Dto;
 
 public class CreateUserDto
 {
-    [RegularExpression("[a-zA-Z\\d]+")] 
+    [RegularExpression("[a-zA-Z\\d]+")]
     public string Login { get; set; }
     [RegularExpression("[a-zA-Z\\d]+")] 
     public string Password { get; set; }

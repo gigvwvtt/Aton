@@ -10,5 +10,6 @@ public class MapperProfiles : Profile
     {
         CreateMap<User, UserForAdminDto>();
         CreateMap<CreateUserDto, User>();
+        CreateMap<User, UserDto>();
     }
 }
